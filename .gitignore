@@ -1,0 +1,30 @@
+# ===== 运行时数据（登录态 / 进度 / 日志 / 浏览器配置 / 页面快照）=====
+# 这些包含账号 Cookie、个人学习记录，绝不能上传
+data/
+answers/
+
+# ===== 个人配置（含账号密码、API Key）=====
+config.json
+
+# ===== 构建产物 =====
+build/
+dist/
+*.spec.bak
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# ===== 系统 / 编辑器 =====
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+
+# 打包产物
+*.zip

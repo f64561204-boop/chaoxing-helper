@@ -1,0 +1,63 @@
+{
+  "account": {
+    "type": "qrcode",
+    "username": "",
+    "password": "",
+    "cookie_file": "data/cookies.json"
+  },
+  "courses": {
+    "keywords": [],
+    "exclude_keywords": []
+  },
+  "player": {
+    "speed": 1.25,
+    "auto_speed": true,
+    "auto_speed_min": 1.0,
+    "max_wait_seconds": 3600,
+    "type_wait_seconds": 25,
+    "headless": false,
+    "browser": "edge",
+    "done_hold_seconds": 8
+  },
+  "doc": {
+    "dwell_seconds": 3,
+    "verify_seconds": 25,
+    "max_wait_seconds": 180,
+    "assume_done": false
+  },
+  "captcha": {
+    "enabled": true,
+    "max_retries": 5,
+    "min_interval": 10
+  },
+  "quiz": {
+    "enabled": true,
+    "auto_submit": true
+  },
+  "ai": {
+    "enabled": false,
+    "provider": "openai_compatible",
+    "base_url": "https://api.deepseek.com/v1",
+    "api_key": "",
+    "model": "deepseek-chat",
+    "temperature": 0.0,
+    "max_retries": 3,
+    "timeout": 30,
+    "cache_file": "answers/ai_cache.json"
+  },
+  "progress": {
+    "file": "data/progress.json"
+  },
+  "log": {
+    "level": "INFO",
+    "file": "data/run.log"
+  },
+  "debug": false,
+  "app": {
+    "mode": "browser",
+    "path": "",
+    "auto_launch": true,
+    "debug_port": 9222,
+    "wait_for_course_seconds": 300
+  }
+}

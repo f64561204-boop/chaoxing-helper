@@ -1,0 +1,10 @@
+# 学习通（超星）自动学习助手 依赖
+# 安装：pip install -r requirements.txt
+# 使用系统 Edge 时无需下载浏览器内核；如需用 Chromium，再执行：playwright install chromium
+
+playwright>=1.40.0
+requests>=2.31.0
+# 验证码自动识别（本地离线 OCR）
+ddddocr>=1.6.0
+onnxruntime>=1.18.0
+Pillow>=10.0.0
