@@ -469,56 +469,105 @@ def run_browser_mode(cfg, logger, answerer, scan_only=False):
         logger,
     )
 
-    # ---- 预扫描：检测每门课程的未观看章节，并输出检测报告 ----
+    # ---- 单趟处理：每门课程只打开一次。没有任务点的章节直接跳过，
+    #      整门都已完成的课程识别后跳过，不再重复打开 ----
     english_courses = [c for c in courses if is_english_course(c.get("name", ""))]
-    try:
-        pending, prescan_failed = prescan_and_report(
-            page, progress, selected, english_courses, logger, cfg
-        )
-    except Exception as e:
-        # 预扫描要给每门课开页面，最容易碰到偶发超时；绝不能因此让整轮直接退出
-        logger.warning(
-            "预扫描出错（%s），改为直接处理全部待处理课程" % str(e).split("\n")[0][:80]
-        )
-        pending, prescan_failed = selected, len(selected)
+
+    report_lines = []
+    total_ok = total_q = total_fail = 0
+    unfinished = []      # 本轮没能完成的任务点（明确列出来，别让人以为全做完了）
+    n_noneed = 0        # 已全部完成 / 无任务点
+    n_unknown = 0       # 目录未能识别
+    n_failed = 0        # 进入失败
 
     if scan_only:
-        logger.info("已按要求只做检测（--scan-only），不打开任何任务点，自动退出。")
+        logger.info("模式：仅检测（不播放、不点开任务点）")
+        for course in selected:
+            name = course.get("name", "")
+            logger.info("===== 检测课程：%s =====" % name)
+            if not open_course(page, course, logger):
+                n_failed += 1
+                report_lines.append("课程《%s》：进入失败 → 跳过（下次重试）" % name)
+                continue
+            if course.get("_no_sections"):
+                n_noneed += 1
+                report_lines.append("课程《%s》：空课程（无章节）→ 跳过" % name)
+                continue
+            nodes = scan_catalog(page, logger, cfg.get("debug", False))
+            tasks = [n for n in nodes if not n.get("no_job")]
+            if not tasks:
+                if nodes:
+                    n_noneed += 1
+                    report_lines.append(
+                        "课程《%s》：%d 个章节都没有任务点 → 跳过" % (name, len(nodes))
+                    )
+                else:
+                    n_unknown += 1
+                    report_lines.append("课程《%s》：未能识别目录 → 无法判断" % name)
+                continue
+            done = sum(
+                1 for n in tasks
+                if n["done"] or (not n.get("state") and progress.is_done(_node_key(name, n)))
+            )
+            label = _kinds_label(name, tasks, _load_kinds())
+            report_lines.append(
+                "课程《%s》：任务点 %d 个（已完成 %d / 未完成 %d）%s → 待处理"
+                % (name, len(tasks), done, len(tasks) - done, label)
+            )
+        for course in english_courses:
+            report_lines.append("课程《%s》：已跳过（英语课程，不做任何操作）" % course.get("name", ""))
+        logger.info("========== 课程检测结果 ==========")
+        for line in report_lines:
+            logger.info(line)
+        logger.info("=================================")
+        logger.info(
+            "仅检测完成：共 %d 门候选课程，%d 门跳过（已完成/无任务点）、%d 门英语跳过、%d 门进入失败、%d 门目录未识别"
+            % (len(selected), n_noneed, len(english_courses), n_failed, n_unknown)
+        )
         save_cookies(page, cookie_path)
         session.close()
         return
 
-    if not pending:
-        if not selected:
-            logger.warning(
-                "没有符合筛选条件的课程（请检查 config.json 的 courses.keywords / "
-                "exclude_keywords），本次不处理，自动退出。"
-            )
-        elif prescan_failed:
-            # 有课程进不去/目录没识别出来，就不能说"全部看完"，否则就是骗人
-            logger.warning(
-                "有 %d 门课程没能进入或没识别出目录，无法确认是否已学完。"
-                "请再运行一次；若一直如此，把 data/run.log 发我。" % prescan_failed
-            )
-        else:
-            logger.info("所有课程均已观看完毕，无需处理，自动退出。")
-        session.close()
-        return
-
-    total_ok = total_q = total_fail = 0
-    unfinished = []      # 本轮没能完成的任务点（明确列出来，别让人以为全做完了）
-    for course in pending:
+    # ---- 正式处理（单趟：打开即处理，没有任务点的直接跳到下一门）----
+    for course in selected:
         name = course.get("name", "")
         _maybe_save_cookies()   # 每门课间顺手刷新登录态，避免下次重新扫码
         logger.info("===== 处理课程：%s =====" % name)
         if not open_course(page, course, logger):
-            logger.warning("进入课程失败，跳过：%s" % name)
+            n_failed += 1
+            report_lines.append("课程《%s》：进入失败 → 跳过（下次重试）" % name)
+            continue
+        if course.get("_no_sections"):
+            n_noneed += 1
+            report_lines.append("课程《%s》：空课程（无章节）→ 跳过" % name)
             continue
         nodes = scan_catalog(page, logger, cfg.get("debug", False))
         nodes = [n for n in nodes if not n.get("no_job")]
         if not nodes:
-            logger.warning("本课程目录未能识别，整门跳过（不记进度，下次重试）")
+            n_unknown += 1
+            report_lines.append("课程《%s》：未能识别目录 → 仍尝试处理" % name)
+            unfinished.append("%s（目录未识别）" % name)
             continue
+        # 统计本报告用的完成/未完成（不改变处理逻辑）
+        done = 0
+        for n in nodes:
+            k = _node_key(name, n)
+            if n["done"] or (not n.get("state") and progress.is_done(k)):
+                done += 1
+        unviewed = len(nodes) - done
+        if unviewed <= 0:
+            n_noneed += 1
+            report_lines.append(
+                "课程《%s》：任务点 %d 个，全部已完成 → 跳过" % (name, len(nodes))
+            )
+            continue
+        known = _kinds_label(name, nodes, _load_kinds())
+        report_lines.append(
+            "课程《%s》：任务点 %d 个（已完成 %d / 未完成 %d）%s → 待处理"
+            % (name, len(nodes), done, unviewed, known)
+        )
+
+
 
         for node in nodes:
             label = node["title"]
@@ -702,6 +751,23 @@ def run_browser_mode(cfg, logger, answerer, scan_only=False):
             unfinished.extend("%s / %s" % (name, n.get("title") or "") for n in left)
         else:
             logger.info("课程《%s》复检：已全部完成" % name)
+
+    # ---- 输出检测报告（格式与优化前一致）----
+    logger.info("========== 课程检测结果 ==========")
+    for line in report_lines:
+        logger.info(line)
+    for course in english_courses:
+        logger.info("课程《%s》：已跳过（英语课程，不做任何操作）" % course.get("name", ""))
+    logger.info("=================================")
+    processed = len(selected) - n_noneed - n_failed - n_unknown
+    logger.info(
+        "共处理 %d 门课程：%d 门有待处理任务点并已进入处理、%d 门跳过（已完成/无任务点）、%d 门英语跳过"
+        % (len(selected) + len(english_courses), max(processed, 0), n_noneed, len(english_courses))
+    )
+    if n_unknown:
+        logger.info("（另有 %d 门目录未能识别，未敢标记完成，下次运行会重试）" % n_unknown)
+    if n_failed:
+        logger.warning("（有 %d 门课程进入失败，请检查网络或账号状态）" % n_failed)
 
     logger.info("答题：成功 %d / 共 %d，失败 %d" % (total_ok, total_q, total_fail))
     # 去重（同一节可能被多次记录）

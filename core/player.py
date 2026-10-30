@@ -616,10 +616,16 @@ def open_course(page: Page, course: dict, logger) -> bool:
     if not _goto_retry(page, href, logger):
         return False
 
-    # 等 #coursetree 渲染（异步），最多 25 秒
-    for _ in range(25):
+    # 等章节目录渲染（异步）：新版 #coursetree 或老版目录标记任一出现即视为就绪，
+    # 避免老版课程在“等 #coursetree”上空转满 25 秒。
+    for _ in range(15):
         try:
             if page.locator("#coursetree .ncells").count():
+                break
+            # 老版目录常见标记：任一出现说明目录已渲染，无需再等 #coursetree
+            if page.locator(
+                ".catalog_item, .posCatalog_select, .catalogPoint, [onclick*='getTeacherAjax']"
+            ).count():
                 break
         except Exception:
             pass
